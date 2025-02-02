@@ -6,6 +6,8 @@ interface BootSequenceLine {
     typewriter?: boolean;
     class?: string;
     html?: boolean;
+    progressBar?: boolean;
+    inline?: boolean;
 }
 
 class Terminal {
@@ -18,6 +20,7 @@ class Terminal {
     private soundEnabled: boolean = false;
     private isBooted: boolean = false;
     private inputLine: HTMLElement | null = null;
+    private currentLine: HTMLElement | null = null;
 
     constructor() {
         this.terminal = document.getElementById('terminal')!;
@@ -33,7 +36,6 @@ class Terminal {
 
     private async initializeTerminal() {
         document.addEventListener('keydown', this.handleKeyPress.bind(this));
-        
         this.soundEnabled = localStorage.getItem('soundEnabled') === 'true';
 
         try {
@@ -73,8 +75,8 @@ class Terminal {
         const bootSequence: BootSequenceLine[] = [
             { text: "BIOS Version 2.15.2301\nCopyright (C) 2024 Advanced Neural Systems, Inc.\n\n", delay: 200 },
             { text: "Performing memory test...\n", delay: 100 },
-            { text: "8TB DDR5-4800 ECC RAM - [", delay: 50 },
-            { text: "████████████████████████████████", typewriter: true, delay: 50 },
+            { text: "8TB DDR5-4800 ECC RAM - [", delay: 50, inline: true },
+            { text: "", delay: 30, progressBar: true, inline: true },
             { text: "] OK\n\n", delay: 100 },
             
             { text: "Detecting primary hardware...\n", delay: 200 },
@@ -104,8 +106,13 @@ class Terminal {
             { text: "Current Load: 2.3%\nTemperature: 18.5°C\nPower Draw: 142.8 kW\n\n", delay: 100 }
         ];
 
-        for (const line of bootSequence) {
-            await this.displayLine(line);
+        for (let i = 0; i < bootSequence.length; i++) {
+            const line = bootSequence[i];
+            if (line.progressBar) {
+                await this.animateProgressBar(30);
+            } else {
+                await this.displayLine(line);
+            }
         }
 
         this.isBooted = true;
@@ -148,7 +155,6 @@ class Terminal {
             return;
         }
 
-        // Display the command as output
         this.displayLine({
             text: `AI-SYSTEM-001> ${command}\n`,
             delay: 0
@@ -203,74 +209,6 @@ class Terminal {
         this.scrollToBottom();
     }
 
-    private async displayLine(line: BootSequenceLine) {
-        const container = document.createElement('div');
-        
-        if (line.html) {
-            container.innerHTML = line.text;
-        } else {
-            const span = document.createElement('span');
-            if (line.class) {
-                span.className = line.class;
-            }
-            
-            if (line.typewriter) {
-                span.textContent = '';
-                container.appendChild(span);
-                await this.typeText(span, line.text, line.delay);
-            } else {
-                span.textContent = line.text;
-                container.appendChild(span);
-            }
-        }
-        
-        this.terminal.appendChild(container);
-        await this.sleep(line.delay);
-    }
-
-    private formatResponse(text: string): string {
-        const words = text.split(' ');
-        let lines: string[] = [];
-        let currentLine = '';
-
-        for (const word of words) {
-            if (currentLine.length + word.length + 1 > 80) {
-                lines.push(currentLine);
-                currentLine = word;
-            } else {
-                currentLine += (currentLine ? ' ' : '') + word;
-            }
-        }
-        lines.push(currentLine);
-
-        let formatted = lines.join('\n');
-        
-        // Format code blocks
-        formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-            const escapedCode = this.escapeHtml(code.trim());
-            return `<div class="code-block ${lang || ''}">${escapedCode}</div>`;
-        });
-
-        // Format lists
-        formatted = formatted.replace(/^- (.*)/gm, '• $1');
-        formatted = formatted.replace(/^  - (.*)/gm, '  ◦ $1');
-        
-        // Format technical terms
-        formatted = formatted.replace(/\(([^)]+)\)/g, '<span class="dim">$1</span>');
-        
-        // Format numbers and units
-        formatted = formatted.replace(/(\d+\.?\d*)\s*(°[CF]|[kMG]?[BWV]|Hz)/g, 
-            '<span class="bright">$1</span>$2');
-
-        return formatted;
-    }
-
-    private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     private async processAIQuery(query: string) {
         if (!this.thread) {
             this.displayLine({
@@ -301,11 +239,9 @@ class Terminal {
             if (lastMessage.role === 'assistant') {
                 const content = lastMessage.content[0].text.value;
                 const formattedResponse = this.formatResponse(content);
-                this.displayLine({ 
-                    text: formattedResponse + '\n', 
-                    delay: 0,
-                    html: true 
-                });
+                const container = document.createElement('div');
+                container.innerHTML = formattedResponse + '\n';
+                this.terminal.appendChild(container);
             }
         } catch (error) {
             this.displayLine({
@@ -341,6 +277,104 @@ class Terminal {
         }
 
         throw new Error('Run timed out');
+    }
+
+    private formatResponse(text: string): string {
+        text = this.escapeHtml(text);
+        
+        const words = text.split(' ');
+        let lines: string[] = [];
+        let currentLine = '';
+
+        for (const word of words) {
+            if (currentLine.length + word.length + 1 > 80) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine += (currentLine ? ' ' : '') + word;
+            }
+        }
+        lines.push(currentLine);
+
+        let formatted = lines.join('\n');
+        
+        formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+            return `<pre class="code-block ${lang || ''}">${code.trim()}</pre>`;
+        });
+
+        formatted = formatted.replace(/^- (.*)/gm, '• $1');
+        formatted = formatted.replace(/^  - (.*)/gm, '  ◦ $1');
+
+        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+        
+        formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        
+        formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+        return formatted;
+    }
+
+    private escapeHtml(text: string): string {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    private async displayLine(line: BootSequenceLine) {
+        if (line.inline) {
+            if (!this.currentLine) {
+                this.currentLine = document.createElement('div');
+                this.terminal.appendChild(this.currentLine);
+            }
+            const span = document.createElement('span');
+            if (line.class) {
+                span.className = line.class;
+            }
+            span.textContent = line.text;
+            this.currentLine.appendChild(span);
+        } else {
+            if (this.currentLine) {
+                this.currentLine = null;
+            }
+            const container = document.createElement('div');
+            const span = document.createElement('span');
+            if (line.class) {
+                span.className = line.class;
+            }
+            
+            if (line.typewriter) {
+                span.textContent = '';
+                container.appendChild(span);
+                await this.typeText(span, line.text, line.delay);
+            } else {
+                span.textContent = line.text;
+                container.appendChild(span);
+            }
+            
+            this.terminal.appendChild(container);
+        }
+        
+        await this.sleep(line.delay);
+    }
+
+    private async animateProgressBar(delay: number) {
+        if (!this.currentLine) return;
+        
+        const progressSpan = document.createElement('span');
+        this.currentLine.appendChild(progressSpan);
+        
+        const progressChars = '█'.repeat(30);
+        let progress = 0;
+        const increment = 1;
+        
+        while (progress < progressChars.length) {
+            progressSpan.textContent = '█'.repeat(progress);
+            this.playKeystroke();
+            await this.sleep(delay);
+            progress += increment;
+        }
+        
+        progressSpan.textContent = progressChars;
     }
 
     private async typeText(element: HTMLElement, text: string, delay: number) {
