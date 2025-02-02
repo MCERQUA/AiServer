@@ -5,6 +5,7 @@ interface BootSequenceLine {
     delay: number;
     typewriter?: boolean;
     class?: string;
+    html?: boolean;
 }
 
 class Terminal {
@@ -16,6 +17,7 @@ class Terminal {
     private currentInput: string = '';
     private soundEnabled: boolean = false;
     private isBooted: boolean = false;
+    private inputLine: HTMLElement | null = null;
 
     constructor() {
         this.terminal = document.getElementById('terminal')!;
@@ -32,10 +34,8 @@ class Terminal {
     private async initializeTerminal() {
         document.addEventListener('keydown', this.handleKeyPress.bind(this));
         
-        // Restore sound preference
         this.soundEnabled = localStorage.getItem('soundEnabled') === 'true';
 
-        // Create a new thread for this session
         try {
             const thread = await this.openai.beta.threads.create();
             this.thread = thread;
@@ -101,10 +101,7 @@ class Terminal {
             { text: "Loading base consciousness matrix.....[OK]\nInitializing ethical constraints.....[OK]\nEngaging natural language interface.....[OK]\n\n", delay: 300 },
 
             { text: "System Status: OPERATIONAL\n", delay: 100, class: 'success' },
-            { text: "Current Load: 2.3%\nTemperature: 18.5°C\nPower Draw: 142.8 kW\n\n", delay: 100 },
-            
-            { text: "AI-SYSTEM-001> Ready for input", delay: 200 },
-            { text: "_", class: 'blink' }
+            { text: "Current Load: 2.3%\nTemperature: 18.5°C\nPower Draw: 142.8 kW\n\n", delay: 100 }
         ];
 
         for (const line of bootSequence) {
@@ -115,7 +112,16 @@ class Terminal {
         this.createInputLine();
     }
 
+    private removeInputLine() {
+        if (this.inputLine) {
+            this.inputLine.remove();
+            this.inputLine = null;
+        }
+    }
+
     private createInputLine() {
+        this.removeInputLine();
+        
         const inputLine = document.createElement('div');
         inputLine.className = 'input-line';
         
@@ -133,10 +139,20 @@ class Terminal {
         this.terminal.appendChild(inputLine);
         
         input.focus();
+        this.inputLine = inputLine;
     }
 
     private async handleCommand(command: string) {
-        if (!command.trim()) return;
+        if (!command.trim()) {
+            this.createInputLine();
+            return;
+        }
+
+        // Display the command as output
+        this.displayLine({
+            text: `AI-SYSTEM-001> ${command}\n`,
+            delay: 0
+        });
 
         this.commandHistory.push(command);
         this.historyIndex = this.commandHistory.length;
@@ -171,7 +187,7 @@ class Terminal {
                 this.terminal.innerHTML = '';
                 this.isBooted = false;
                 await this.startBootSequence();
-                break;
+                return;
             case 'sound':
                 this.soundEnabled = !this.soundEnabled;
                 localStorage.setItem('soundEnabled', String(this.soundEnabled));
@@ -187,6 +203,74 @@ class Terminal {
         this.scrollToBottom();
     }
 
+    private async displayLine(line: BootSequenceLine) {
+        const container = document.createElement('div');
+        
+        if (line.html) {
+            container.innerHTML = line.text;
+        } else {
+            const span = document.createElement('span');
+            if (line.class) {
+                span.className = line.class;
+            }
+            
+            if (line.typewriter) {
+                span.textContent = '';
+                container.appendChild(span);
+                await this.typeText(span, line.text, line.delay);
+            } else {
+                span.textContent = line.text;
+                container.appendChild(span);
+            }
+        }
+        
+        this.terminal.appendChild(container);
+        await this.sleep(line.delay);
+    }
+
+    private formatResponse(text: string): string {
+        const words = text.split(' ');
+        let lines: string[] = [];
+        let currentLine = '';
+
+        for (const word of words) {
+            if (currentLine.length + word.length + 1 > 80) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine += (currentLine ? ' ' : '') + word;
+            }
+        }
+        lines.push(currentLine);
+
+        let formatted = lines.join('\n');
+        
+        // Format code blocks
+        formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+            const escapedCode = this.escapeHtml(code.trim());
+            return `<div class="code-block ${lang || ''}">${escapedCode}</div>`;
+        });
+
+        // Format lists
+        formatted = formatted.replace(/^- (.*)/gm, '• $1');
+        formatted = formatted.replace(/^  - (.*)/gm, '  ◦ $1');
+        
+        // Format technical terms
+        formatted = formatted.replace(/\(([^)]+)\)/g, '<span class="dim">$1</span>');
+        
+        // Format numbers and units
+        formatted = formatted.replace(/(\d+\.?\d*)\s*(°[CF]|[kMG]?[BWV]|Hz)/g, 
+            '<span class="bright">$1</span>$2');
+
+        return formatted;
+    }
+
+    private escapeHtml(text: string): string {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     private async processAIQuery(query: string) {
         if (!this.thread) {
             this.displayLine({
@@ -200,28 +284,28 @@ class Terminal {
         this.displayLine({ text: 'Processing query...\n', delay: 0, class: 'dim' });
         
         try {
-            // Add the user's message to the thread
             await this.openai.beta.threads.messages.create(this.thread.id, {
                 role: "user",
                 content: query
             });
 
-            // Run the assistant
             const run = await this.openai.beta.threads.runs.create(this.thread.id, {
                 assistant_id: import.meta.env.VITE_ASSISTANT_ID
             });
 
-            // Poll for the response
             let response = await this.pollRunStatus(run.id);
             
-            // Get the messages (the latest one will be the assistant's response)
             const messages = await this.openai.beta.threads.messages.list(this.thread.id);
             const lastMessage = messages.data[0];
 
             if (lastMessage.role === 'assistant') {
                 const content = lastMessage.content[0].text.value;
                 const formattedResponse = this.formatResponse(content);
-                this.displayLine({ text: formattedResponse + '\n\n', delay: 0 });
+                this.displayLine({ 
+                    text: formattedResponse + '\n', 
+                    delay: 0,
+                    html: true 
+                });
             }
         } catch (error) {
             this.displayLine({
@@ -257,60 +341,6 @@ class Terminal {
         }
 
         throw new Error('Run timed out');
-    }
-
-    private formatResponse(text: string): string {
-        // Add line breaks at 80 characters
-        const words = text.split(' ');
-        let lines: string[] = [];
-        let currentLine = '';
-
-        for (const word of words) {
-            if (currentLine.length + word.length + 1 > 80) {
-                lines.push(currentLine);
-                currentLine = word;
-            } else {
-                currentLine += (currentLine ? ' ' : '') + word;
-            }
-        }
-        lines.push(currentLine);
-
-        // Format code blocks with syntax highlighting
-        let formatted = lines.join('\n');
-        formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-            return `\n<div class="code-block ${lang || ''}">${code.trim()}</div>\n`;
-        });
-
-        // Format lists with proper indentation and bullets
-        formatted = formatted.replace(/^- (.*)/gm, '• $1');
-        formatted = formatted.replace(/^  - (.*)/gm, '  ◦ $1');
-
-        // Format technical terms
-        formatted = formatted.replace(/\(([^)]+)\)/g, '<span class="dim">($1)</span>');
-
-        // Format numbers and units
-        formatted = formatted.replace(/(\d+\.?\d*)\s*(°[CF]|[kMG]?[BWV]|Hz)/g, 
-            '<span class="bright">$1</span>$2');
-
-        return formatted;
-    }
-
-    private async displayLine(line: BootSequenceLine) {
-        const span = document.createElement('span');
-        if (line.class) {
-            span.className = line.class;
-        }
-        
-        if (line.typewriter) {
-            span.textContent = '';
-            this.terminal.appendChild(span);
-            await this.typeText(span, line.text, line.delay);
-        } else {
-            span.textContent = line.text;
-            this.terminal.appendChild(span);
-        }
-        
-        await this.sleep(line.delay);
     }
 
     private async typeText(element: HTMLElement, text: string, delay: number) {
@@ -366,7 +396,7 @@ class Terminal {
     }
 
     private displaySystemMessage(message: string) {
-        this.displayLine({ text: message + '\n\n', delay: 0, class: 'bright' });
+        this.displayLine({ text: message + '\n', delay: 0, class: 'bright' });
     }
 
     private scrollToBottom() {
