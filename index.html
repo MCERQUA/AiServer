@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Terminal Interface</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            margin: 0;
+            line-height: 1.2;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        #terminal {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-width: 80ch;
+        }
+
+        .blink {
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        .error { color: #ff0000; }
+        .warning { color: #ffff00; }
+        .success { color: #00ff00; }
+        .dim { opacity: 0.7; }
+        .bright { opacity: 1; font-weight: bold; }
+        
+        .hidden {
+            display: none;
+        }
+
+        .input-line {
+            display: flex;
+            margin-top: 4px;
+        }
+
+        .prompt {
+            color: #00ff00;
+            margin-right: 8px;
+        }
+
+        #userInput {
+            background: transparent;
+            border: none;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: inherit;
+            outline: none;
+            flex-grow: 1;
+        }
+
+        .code-block {
+            background: #001100;
+            padding: 8px;
+            margin: 8px 0;
+            border-left: 2px solid #00ff00;
+        }
+
+        .loading {
+            display: inline-block;
+            animation: loading 1s infinite;
+        }
+
+        @keyframes loading {
+            0% { content: "." }
+            33% { content: ".." }
+            66% { content: "..." }
+            100% { content: "." }
+        }
+
+        #keystrokeAudio {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <audio id="keystrokeAudio" src="data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==" preload="auto"></audio>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
